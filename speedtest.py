@@ -13,7 +13,9 @@ MESSAGE_LENGTH = 1000000
 RECEIVE_BUFFER = 255
 
 TERMINATION_SYMBOL = 255
-TIMEOUT = 0.1
+CONNECT_TIMEOUT = 0.1
+SEND_TIMEOUT = 10
+RECEIVE_TIMEOUT = 10
 
 def ping(sock, message):
     # Send data
@@ -21,6 +23,7 @@ def ping(sock, message):
     start = timer()
     print(f'Message length {amount_expected} bytes')
 
+    sock.settimeout(SEND_TIMEOUT)
     try:
         sock.sendall(message)
     except TimeoutError:
@@ -29,6 +32,7 @@ def ping(sock, message):
         return
     
     amount_received = 0
+    sock.settimeout(RECEIVE_TIMEOUT)
     while amount_received < amount_expected:
         try:
             data = sock.recv(RECEIVE_BUFFER)
@@ -78,7 +82,7 @@ def client(server):
         
     server_address = (server, server_port)
     print(f'Connecting to {server} on port: {server_port}')
-    sock.settimeout(TIMEOUT)
+    sock.settimeout(CONNECT_TIMEOUT)
     try:
         sock.connect(server_address)
     except TimeoutError:
@@ -88,7 +92,8 @@ def client(server):
     message = generate_message(MESSAGE_LENGTH)
 
     ping(sock, message)
-    print('Closing socket')
+    sock.close()
+
 
 def get_local_server_address():
     # The most convinient way to determine local ip, without knowing network interface name
@@ -100,8 +105,7 @@ def get_local_server_address():
     except:
         pass
     return server_address
-    
-    
+
 
 def server():
     # Create a TCP/IP socket
@@ -126,7 +130,6 @@ def server():
             try:
                 print(f'Connection from {client_address}')
 
-                # Receive the data in small chunks and retransmit it
                 data_size = 0
                 message = b''
                 while True:
@@ -138,31 +141,24 @@ def server():
                     else:
                         print(f'No more data from {client_address}')
                         break
-                        
-                    if data.strip() == 'QUIT':
-                        raise Exception("Time to close")
                 connection.sendall(message)
             finally:
                 # Clean up the connection
                 connection.close()
     except Exception as e:
-        print('Closing socket')
         sock.close()
         raise
 
 
 if __name__ == '__main__':
-    #provide for usage statement
     if len(sys.argv) > 1 and sys.argv[1] in ['/?', '-help', '--help']:
         bin_path = os.path.basename(sys.argv[0])
         print(f"Usage: {bin_path} [server IP] If server is not specified, {bin_path} will open a port to act as the server")
         sys.exit(0)
 
-    # if server is provided:
-    # run client
     server_address = 'localhost'
     if len(sys.argv) > 1:
         server_address = sys.argv[1]
         client(server_address)
-    else: # start server
+    else:
        server()
