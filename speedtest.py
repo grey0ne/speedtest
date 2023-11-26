@@ -10,15 +10,17 @@ from typing import Tuple
 
 server_port = 10000
 
-unit_list = ['', 'K', 'M', 'G']
+UNIT_LIST = ['', 'K', 'M', 'G']
 
 MESSAGE_LENGTHS = [100000, 100000, 1000000, 1000000, 3000000, 3000000]
 RECEIVE_BUFFER = 255
+PING_REPEATS = 10
 
 TERMINATION_SYMBOL = 255
 CONNECT_TIMEOUT = 0.2
 SEND_TIMEOUT = 10
-RECEIVE_TIMEOUT = 10
+
+DOWNLOAD_MESSAGE_LENGTH = 10
 
 
 @dataclass
@@ -29,8 +31,8 @@ class TestResult:
 
 def get_socket(server_address: Tuple[str, int]):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
     sock.settimeout(CONNECT_TIMEOUT)
+
     try:
         sock.connect(server_address)
     except TimeoutError:
@@ -40,8 +42,16 @@ def get_socket(server_address: Tuple[str, int]):
     return sock
 
 
-def ping(server_address: Tuple[str, int], message: bytes) -> Tuple[TestResult, TestResult]:
-    amount_expected = len(message)
+def receive_bytes(sock, expected_length):
+    amount_received = 0
+    while amount_received < expected_length:
+        data = sock.recv(RECEIVE_BUFFER)
+        amount_received += len(data)
+
+
+def test_upload(server_address: Tuple[str, int], message_length: int) -> Tuple[TestResult, TestResult]:
+    message = generate_message(message_length)
+    amount_expected = 1
     
     sock = get_socket(server_address)
 
@@ -52,36 +62,20 @@ def ping(server_address: Tuple[str, int], message: bytes) -> Tuple[TestResult, T
     start = timer()
     try:
         sock.sendall(message)
+        receive_bytes(sock, amount_expected) 
     except TimeoutError:
         print(f'Send timeout {SEND_TIMEOUT} seconds')
-        sock.close()
         return
-    
-    amount_received = 0
-    sock.settimeout(RECEIVE_TIMEOUT)
-    while amount_received < amount_expected:
-        try:
-            data = sock.recv(RECEIVE_BUFFER)
-        except TimeoutError:
-            print(f'Receive timeout {RECEIVE_TIMEOUT} seconds')
-            sock.close()
-            return
-        if amount_received == 0 and len(data) > 0:
-            upload_end = timer()
-            upload_result = TestResult(amount_expected, upload_end - start)
-            show_timings(upload_result, 'Up  ')
-        amount_received += len(data)
-    download_result = TestResult(amount_expected, timer() - upload_end)
-    show_timings(download_result, 'Down')
+    finally:
+        sock.close()
 
-    sock.close()
 
-    return upload_result, download_result
+    return TestResult(len(message), timer() - start)
 
 
 def get_scaled_unit(data_size: int) -> Tuple[str, float]:
     log = int(math.log(data_size, 1000))
-    return unit_list[log], data_size if log == 0 else data_size / (1000 ** log)
+    return UNIT_LIST[log], data_size if log == 0 else data_size / (1000 ** log)
 
 
 def show_timings(test_result: TestResult, process_name: str) -> None:
@@ -94,14 +88,14 @@ def show_timings(test_result: TestResult, process_name: str) -> None:
     highSpeed = test_result.message_length / test_result.duration
     high_unit, highSpeed_scaled = get_scaled_unit(highSpeed)
     
-    status = f"{process_name} {data_size_scaled:.2f} {data_unit}bits of data in {test_result.duration:.2f} seconds."
-    status += f" {speed_scaled:.2f} {unit}bps or {highSpeed_scaled:.2f} {high_unit}Bps"
+    status = f"{process_name} {data_size_scaled:.2f} {data_unit}bits of data in {test_result.duration * 1000:.2f} ms."
+    status += f" {speed_scaled:.2f} {unit}bps"
     print(status)
 
 
 def generate_message(length):
     arr = []
-    for x in range(length):
+    for x in range(length - 1):
         arr.append(random.choice(range(TERMINATION_SYMBOL - 1)).to_bytes(1))
     result = b''.join(arr)
     return result + TERMINATION_SYMBOL.to_bytes(1)
@@ -112,9 +106,13 @@ def client(server):
 
     server_address = (server, server_port)
 
+    for x in range(PING_REPEATS): 
+        result = test_upload(server_address, 1)
+        print(f'Ping {result.duration * 1000:.2f} ms')
+        
     for message_length in MESSAGE_LENGTHS: 
-        message = generate_message(message_length)
-        ping(server_address, message)
+        up_result = test_upload(server_address, message_length)
+        show_timings(up_result, 'Up  ')
 
 
 def get_local_server_address():
@@ -158,7 +156,15 @@ def server():
                     else:
                         print(f'No more data from {client_address}')
                         break
-                connection.sendall(message)
+                if len(message) == DOWNLOAD_MESSAGE_LENGTH + 1:
+                    #testing download
+                    message_length = int.from_bytes(message[:-1])
+                    message = generate_message(message_length)
+                    connection.sendall(message)
+                else:
+                    #testing upload
+                    message = generate_message(1)
+                    connection.sendall(message)
             finally:
                 connection.close()
     except Exception as e:
