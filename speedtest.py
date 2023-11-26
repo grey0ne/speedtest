@@ -27,7 +27,7 @@ def ping(sock, message):
     try:
         sock.sendall(message)
     except TimeoutError:
-        print(f'Send timeout {TIMEOUT} seconds')
+        print(f'Send timeout {SEND_TIMEOUT} seconds')
         sock.close()
         return
     
@@ -37,7 +37,7 @@ def ping(sock, message):
         try:
             data = sock.recv(RECEIVE_BUFFER)
         except TimeoutError:
-            print(f'Receive timeout {TIMEOUT} seconds')
+            print(f'Receive timeout {RECEIVE_TIMEOUT} seconds')
             sock.close()
             return
         if amount_received == 0 and len(data) > 0:
@@ -86,7 +86,7 @@ def client(server):
     try:
         sock.connect(server_address)
     except TimeoutError:
-        print(f'Connect timeout {TIMEOUT} seconds to {server_address}')
+        print(f'Connect timeout {CONNECT_TIMEOUT} seconds to {server_address}')
         sock.close()
         return
     message = generate_message(MESSAGE_LENGTH)
