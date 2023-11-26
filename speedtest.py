@@ -1,29 +1,55 @@
 import socket
 import sys
 from timeit import default_timer as timer
+from time import sleep
 import math
 import os.path
 import random
+from dataclasses import dataclass
+from typing import Tuple
 
 server_port = 10000
 
 unit_list = ['', 'K', 'M', 'G']
 
-MESSAGE_LENGTH = 1000000
+MESSAGE_LENGTHS = [100000, 100000, 1000000, 1000000, 3000000, 3000000]
 RECEIVE_BUFFER = 255
 
 TERMINATION_SYMBOL = 255
-CONNECT_TIMEOUT = 0.1
+CONNECT_TIMEOUT = 0.2
 SEND_TIMEOUT = 10
 RECEIVE_TIMEOUT = 10
 
-def ping(sock, message):
-    # Send data
+
+@dataclass
+class TestResult:
+    message_length: int
+    duration: float
+
+
+def get_socket(server_address: Tuple[str, int]):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    sock.settimeout(CONNECT_TIMEOUT)
+    try:
+        sock.connect(server_address)
+    except TimeoutError:
+        print(f'Connect timeout {CONNECT_TIMEOUT} seconds to {server_address}')
+        sock.close()
+        return
+    return sock
+
+
+def ping(server_address: Tuple[str, int], message: bytes) -> Tuple[TestResult, TestResult]:
     amount_expected = len(message)
-    start = timer()
-    print(f'Message length {amount_expected} bytes')
+    
+    sock = get_socket(server_address)
+
+    if sock is None:
+        return
 
     sock.settimeout(SEND_TIMEOUT)
+    start = timer()
     try:
         sock.sendall(message)
     except TimeoutError:
@@ -42,57 +68,53 @@ def ping(sock, message):
             return
         if amount_received == 0 and len(data) > 0:
             upload_end = timer()
-            show_timings(amount_expected, upload_end - start, 'Upload')
+            upload_result = TestResult(amount_expected, upload_end - start)
+            show_timings(upload_result, 'Up  ')
         amount_received += len(data)
-    show_timings(amount_expected, timer() - upload_end, 'Download')
+    download_result = TestResult(amount_expected, timer() - upload_end)
+    show_timings(download_result, 'Down')
+
+    sock.close()
+
+    return upload_result, download_result
 
 
-def get_scaled_unit(data_size):
+def get_scaled_unit(data_size: int) -> Tuple[str, float]:
     log = int(math.log(data_size, 1000))
     return unit_list[log], data_size if log == 0 else data_size / (1000 ** log)
 
 
-def show_timings(message_size, duration, process_name):
-    data_size = message_size * 8 # char to bits
+def show_timings(test_result: TestResult, process_name: str) -> None:
+    data_size = test_result.message_length * 8
     data_unit, data_size_scaled = get_scaled_unit(data_size)
     
-    speed = data_size / duration
+    speed = data_size / test_result.duration
     unit, speed_scaled = get_scaled_unit(speed)
     
-    highSpeed = message_size / duration
+    highSpeed = test_result.message_length / test_result.duration
     high_unit, highSpeed_scaled = get_scaled_unit(highSpeed)
     
-    print(f"{process_name} {data_size_scaled:.2} {data_unit}bits of data in {duration:.2} seconds")
-    print(f"{speed_scaled:.2f} {unit}bps or {highSpeed_scaled:.2} {high_unit}Bps")
+    status = f"{process_name} {data_size_scaled:.2f} {data_unit}bits of data in {test_result.duration:.2f} seconds."
+    status += f" {speed_scaled:.2f} {unit}bps or {highSpeed_scaled:.2f} {high_unit}Bps"
+    print(status)
 
 
 def generate_message(length):
     arr = []
-    for x in range(MESSAGE_LENGTH):
+    for x in range(length):
         arr.append(random.choice(range(TERMINATION_SYMBOL - 1)).to_bytes(1))
     result = b''.join(arr)
     return result + TERMINATION_SYMBOL.to_bytes(1)
 
 
 def client(server):
-    # Create a TCP/IP socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    # Connect the socket to the port where the server is listening
-        
-    server_address = (server, server_port)
     print(f'Connecting to {server} on port: {server_port}')
-    sock.settimeout(CONNECT_TIMEOUT)
-    try:
-        sock.connect(server_address)
-    except TimeoutError:
-        print(f'Connect timeout {CONNECT_TIMEOUT} seconds to {server_address}')
-        sock.close()
-        return
-    message = generate_message(MESSAGE_LENGTH)
 
-    ping(sock, message)
-    sock.close()
+    server_address = (server, server_port)
+
+    for message_length in MESSAGE_LENGTHS: 
+        message = generate_message(message_length)
+        ping(server_address, message)
 
 
 def get_local_server_address():
@@ -108,23 +130,18 @@ def get_local_server_address():
 
 
 def server():
-    # Create a TCP/IP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    # get local IP address by connecting to Google
     server_address = get_local_server_address()
    
-    # Bind the socket to the port
     server_address = (server_address, server_port)
     print(f'starting up on {server_address} port {server_port}')
     sock.bind(server_address)
 
-    # Listen for incoming connections
     sock.listen(1)
 
     try:
         while True:
-            # Wait for a connection
             print('Waiting for a connection')
             connection, client_address = sock.accept()
             try:
@@ -143,7 +160,6 @@ def server():
                         break
                 connection.sendall(message)
             finally:
-                # Clean up the connection
                 connection.close()
     except Exception as e:
         sock.close()
