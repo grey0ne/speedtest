@@ -151,10 +151,8 @@ def server():
                     data = connection.recv(RECEIVE_BUFFER)
                     data_size += len(data)
                     message += data
-                    if data[-1] != TERMINATION_SYMBOL:
-                        print(f'Received {data_size} from {client_address}')
-                    else:
-                        print(f'No more data from {client_address}')
+                    if data[-1] == TERMINATION_SYMBOL:
+                        print(f'Received {len(message)} bytes from {client_address}')
                         break
                 if len(message) == DOWNLOAD_MESSAGE_LENGTH + 1:
                     #testing download
