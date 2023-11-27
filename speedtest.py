@@ -11,9 +11,9 @@ SERVER_PORT = 10000
 
 UNIT_LIST = ['', 'K', 'M', 'G']
 
-MESSAGE_LENGTHS = [100000, 1000000, 3000000, 6000000]
+MESSAGE_LENGTHS = [1000000, 3000000, 6000000]
 RECEIVE_BUFFER = 1000
-PING_REPEATS = 10
+PING_REPEATS = 20
 
 TERMINATION_SYMBOL = 255
 CONNECT_TIMEOUT = 0.2
@@ -21,6 +21,14 @@ SEND_TIMEOUT = 10
 
 DOWNLOAD_MESSAGE_LENGTH = 10
 
+def generate_message(length):
+    arr = []
+    for _ in range(length):
+        arr.append(random.choice(range(TERMINATION_SYMBOL - 1)).to_bytes(1))
+    result = b''.join(arr)
+    return result
+
+BASE_MESSAGE = generate_message(10000)
 
 @dataclass
 class TestResult:
@@ -51,17 +59,46 @@ def receive_bytes(sock:socket.socket, expected_length: int):
 
 
 def test_upload(sock: socket.socket, message_length: int) -> TestResult:
-    message = generate_message(message_length)
     amount_expected = 1
 
-    sock.settimeout(SEND_TIMEOUT)
     start = timer()
+    send_bytes(sock, message_length, amount_expected)
+
+    return TestResult(message_length, timer() - start)
+
+
+def send_bytes(sock: socket.socket, message_length: int, response_length: int):
+    sock.settimeout(SEND_TIMEOUT)
     try:
-        sock.sendall(message)
-        receive_bytes(sock, amount_expected)
+        for _ in range(int(message_length / len(BASE_MESSAGE))):
+            sock.sendall(BASE_MESSAGE)
+        sock.sendall(TERMINATION_SYMBOL.to_bytes(1))
+        receive_bytes(sock, response_length)
     except TimeoutError as e:
         print(f'Send timeout {SEND_TIMEOUT} seconds')
         raise e
+
+
+def send_message(sock: socket.socket, message: bytes, response_length: int):
+    sock.settimeout(SEND_TIMEOUT)
+    try:
+        sock.sendall(message)
+        receive_bytes(sock, response_length)
+    except TimeoutError as e:
+        print(f'Send timeout {SEND_TIMEOUT} seconds')
+        raise e
+
+
+def generate_download_message(message_length: int) -> bytes:
+    return message_length.to_bytes(DOWNLOAD_MESSAGE_LENGTH) + TERMINATION_SYMBOL.to_bytes(1)
+
+
+def test_dowload(sock: socket.socket, message_length: int) -> TestResult:
+    message = generate_download_message(message_length)
+    amount_expected = message_length
+
+    start = timer()
+    send_message(sock, message, amount_expected)
 
     return TestResult(len(message), timer() - start)
 
@@ -91,14 +128,6 @@ def show_timings(test_result: TestResult, process_name: str) -> None:
     status = f"{process_name} {data_size_scaled:.2f} {data_unit}bits of data in {test_result.duration * 1000:.2f} ms."
     status += f" {speed_scaled:.2f} {unit}bps"
     print(status)
-
-
-def generate_message(length):
-    arr = []
-    for _ in range(length - 1):
-        arr.append(random.choice(range(TERMINATION_SYMBOL - 1)).to_bytes(1))
-    result = b''.join(arr)
-    return result + TERMINATION_SYMBOL.to_bytes(1)
 
 
 def init_client(server):
@@ -134,7 +163,6 @@ def get_local_server_address():
 def process_connection(connection, client_address):
     while True:
         try:
-            print(f'Connection from {client_address[0]}')
 
             data_size = 0
             start = timer()
@@ -143,10 +171,10 @@ def process_connection(connection, client_address):
                 data_size += len(data)
                 if data[-1] == TERMINATION_SYMBOL:
                     break
-            print(f'Received {data_size} bytes from {client_address[0]} during {(timer() - start) * 1000:.2f} ms')
             if data_size == DOWNLOAD_MESSAGE_LENGTH + 1:
-                #testing download
+                # Testing download
                 message_length = int.from_bytes(data[:-1])
+                print(f'Sending {message_length} bytes to {client_address[0]}')
                 start = timer()
                 message = generate_message(message_length)
                 print(f'Message generation time {(timer() - start) * 1000:.2f} ms')
@@ -154,10 +182,11 @@ def process_connection(connection, client_address):
             elif data_size == 2 and data[0] == TERMINATION_SYMBOL:
                 # End session
                 connection.close()
-                print('Client {client_address[0]} session ended')
+                print(f'Client {client_address[0]} session ended')
                 break
             else:
-                #testing upload
+                print(f'Received {data_size} bytes from {client_address[0]} during {(timer() - start) * 1000:.2f} ms')
+                # Testing upload
                 message = generate_message(1)
                 connection.sendall(message)
         except TimeoutError:
@@ -177,7 +206,9 @@ def init_server():
 
         while True:
             connection, client_address = sock.accept()
+            print(f'Connection from {client_address[0]}')
             process_connection(connection, client_address)
+
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] in ['/?', '-help', '--help']:
