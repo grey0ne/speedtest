@@ -145,15 +145,9 @@ def init_client(server):
             for _ in range(PING_REPEATS):
                 result = test_upload(sock, 1)
                 print(f'Ping {result.duration * 1000:.2f} ms')
-<<<<<<< HEAD
             up_results = []
-            for message_length in MESSAGE_LENGTHS:
-                up_result = test_upload(sock, message_length)
-                up_results.append(up_result)
-=======
             for _ in range(UPLOAD_REPS):
                 up_result = test_upload(sock, MESSAGE_LENGTH)
->>>>>>> 9a5d32801b092fbbb3eebdd97e12969b50c25a89
                 show_timings(up_result, 'Up  ')
             show_aggregates(up_results)
             end_session(sock)
