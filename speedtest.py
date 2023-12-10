@@ -11,9 +11,11 @@ SERVER_PORT = 10000
 
 UNIT_LIST = ['', 'K', 'M', 'G']
 
-MESSAGE_LENGTHS = [1000000, 3000000, 6000000]
+MESSAGE_LENGTH = 10000000
+DOWNLOAD_REPS = 20
+UPLOAD_REPS = DOWNLOAD_REPS
 RECEIVE_BUFFER = 1000
-PING_REPEATS = 20
+PING_REPEATS = 50
 
 TERMINATION_SYMBOL = 255
 CONNECT_TIMEOUT = 0.2
@@ -143,10 +145,15 @@ def init_client(server):
             for _ in range(PING_REPEATS):
                 result = test_upload(sock, 1)
                 print(f'Ping {result.duration * 1000:.2f} ms')
+<<<<<<< HEAD
             up_results = []
             for message_length in MESSAGE_LENGTHS:
                 up_result = test_upload(sock, message_length)
                 up_results.append(up_result)
+=======
+            for _ in range(UPLOAD_REPS):
+                up_result = test_upload(sock, MESSAGE_LENGTH)
+>>>>>>> 9a5d32801b092fbbb3eebdd97e12969b50c25a89
                 show_timings(up_result, 'Up  ')
             show_aggregates(up_results)
             end_session(sock)
