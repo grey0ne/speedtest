@@ -11,11 +11,12 @@ SERVER_PORT = 10000
 
 UNIT_LIST = ['', 'K', 'M', 'G']
 
-MESSAGE_LENGTH = 10000000
+MESSAGE_LENGTH = 1000000
 DOWNLOAD_REPS = 20
 UPLOAD_REPS = DOWNLOAD_REPS
 RECEIVE_BUFFER = 1000
 PING_REPEATS = 50
+MAX_TEST_DURATION = 2
 
 TERMINATION_SYMBOL = 255
 CONNECT_TIMEOUT = 0.2
@@ -26,7 +27,7 @@ DOWNLOAD_MESSAGE_LENGTH = 10
 def generate_message(length):
     arr = []
     for _ in range(length):
-        arr.append(random.choice(range(TERMINATION_SYMBOL - 1)).to_bytes(1))
+        arr.append(random.choice(range(TERMINATION_SYMBOL - 1)).to_bytes(1, byteorder='big'))
     result = b''.join(arr)
     return result
 
@@ -74,7 +75,7 @@ def send_bytes(sock: socket.socket, message_length: int, response_length: int):
     try:
         for _ in range(int(message_length / len(BASE_MESSAGE))):
             sock.sendall(BASE_MESSAGE)
-        sock.sendall(TERMINATION_SYMBOL.to_bytes(1))
+        sock.sendall(TERMINATION_SYMBOL.to_bytes(1, byteorder='big'))
         receive_bytes(sock, response_length)
     except TimeoutError as e:
         print(f'Send timeout {SEND_TIMEOUT} seconds')
@@ -106,7 +107,7 @@ def test_dowload(sock: socket.socket, message_length: int) -> TestResult:
 
 
 def end_session(sock: socket.socket):
-    message = TERMINATION_SYMBOL.to_bytes(1) * 2
+    message = TERMINATION_SYMBOL.to_bytes(1, byteorder='big') * 2
 
     try:
         sock.sendall(message)
@@ -146,9 +147,12 @@ def init_client(server):
                 result = test_upload(sock, 1)
                 print(f'Ping {result.duration * 1000:.2f} ms')
             up_results = []
+            message_length = MESSAGE_LENGTH
             for _ in range(UPLOAD_REPS):
-                up_result = test_upload(sock, MESSAGE_LENGTH)
+                up_result = test_upload(sock, message_length)
                 show_timings(up_result, 'Up  ')
+                if up_result.duration < MAX_TEST_DURATION:
+                    message_length *= 2
             show_aggregates(up_results)
             end_session(sock)
         except TimeoutError:
