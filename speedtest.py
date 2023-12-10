@@ -129,6 +129,8 @@ def show_timings(test_result: TestResult, process_name: str) -> None:
     status += f" {speed_scaled:.2f} {unit}bps"
     print(status)
 
+def show_aggregates(result_list):
+    min_speed = 0
 
 def init_client(server):
     print(f'Connecting to {server} on port: {SERVER_PORT}')
@@ -137,12 +139,16 @@ def init_client(server):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
             connect_socket(sock, server_address)
+            ping_results = []
             for _ in range(PING_REPEATS):
                 result = test_upload(sock, 1)
                 print(f'Ping {result.duration * 1000:.2f} ms')
+            up_results = []
             for message_length in MESSAGE_LENGTHS:
                 up_result = test_upload(sock, message_length)
+                up_results.append(up_result)
                 show_timings(up_result, 'Up  ')
+            show_aggregates(up_results)
             end_session(sock)
         except TimeoutError:
             pass
@@ -163,13 +169,16 @@ def get_local_server_address():
 def process_connection(connection, client_address):
     while True:
         try:
-
             data_size = 0
             start = timer()
             while True:
-                data = connection.recv(RECEIVE_BUFFER)
+                try:
+                    data = connection.recv(RECEIVE_BUFFER)
+                except ConnectionResetError:
+                    print(f'Client dropped connection {client_address[0]}')
+                    return
                 data_size += len(data)
-                if data[-1] == TERMINATION_SYMBOL:
+                if len(data) == 0 or data[-1] == TERMINATION_SYMBOL:
                     break
             if data_size == DOWNLOAD_MESSAGE_LENGTH + 1:
                 # Testing download
@@ -188,7 +197,11 @@ def process_connection(connection, client_address):
                 print(f'Received {data_size} bytes from {client_address[0]} during {(timer() - start) * 1000:.2f} ms')
                 # Testing upload
                 message = generate_message(1)
-                connection.sendall(message)
+                try:
+                    connection.sendall(message)
+                except BrokenPipeError:
+                    print('Cannot send response')
+                    return
         except TimeoutError:
             pass
 
