@@ -4,6 +4,7 @@ from timeit import default_timer as timer
 import math
 import os.path
 import random
+from statistics import mean
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -146,6 +147,10 @@ def init_client(server):
             for _ in range(PING_REPEATS):
                 result = test_upload(sock, 1)
                 print(f'Ping {result.duration * 1000:.2f} ms')
+                ping_results.append(result)
+            avg_ping = mean([r.duration for r in ping_results])
+            print(f'Average Ping {avg_ping * 1000:.2f} ms')
+
             up_results = []
             message_length = MESSAGE_LENGTH
             for _ in range(UPLOAD_REPS):
